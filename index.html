@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classical Chennai Web Radio</title>
+<style>
+  :root { --bg:#14110f; --panel:#1f1a16; --line:#3a3029; --text:#f3e9dc; --muted:#a8968a; --accent:#d9a441; --accent2:#b5562e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: Georgia, "Times New Roman", serif; background:radial-gradient(circle at top,#2a211b 0%,var(--bg) 60%); color:var(--text); min-height:100vh; display:flex; justify-content:center; padding:24px 16px; }
+  .wrap { width:100%; max-width:560px; }
+  h1 { font-size:22px; font-weight:normal; letter-spacing:.04em; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 20px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; }
+  .now { text-align:center; padding:8px 0 16px; }
+  .now .label { font-size:12px; text-transform:uppercase; letter-spacing:.14em; color:var(--accent); }
+  .now .title { font-size:18px; margin:6px 0 2px; min-height:24px; }
+  .now .meta { font-size:13px; color:var(--muted); min-height:18px; }
+  .controls { display:flex; justify-content:center; align-items:center; gap:14px; margin:12px 0 18px; }
+  button { font-family:inherit; color:var(--text); background:transparent; border:1px solid var(--line); border-radius:999px; padding:10px 16px; cursor:pointer; font-size:14px; }
+  button:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+  button:disabled { opacity:.4; cursor:default; }
+  .play { width:64px; height:64px; padding:0; border-radius:50%; background:var(--accent); color:#1a130d; border:none; font-size:22px; display:flex; align-items:center; justify-content:center; }
+  .play:hover:not(:disabled) { background:#e8b657; color:#1a130d; }
+  .vol { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; }
+  .vol input { flex:1; accent-color:var(--accent); }
+  .status { font-size:12px; color:var(--muted); min-height:16px; margin-top:10px; text-align:center; }
+  .status.err { color:#e07a5f; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.14em; color:var(--muted); font-weight:normal; margin:24px 0 8px; }
+  ul.stations { list-style:none; margin:0; padding:0; }
+  ul.stations li { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; border-radius:10px; cursor:pointer; }
+  ul.stations li:hover { background:#2a231d; }
+  ul.stations li.active { background:#2f261e; border:1px solid var(--accent2); }
+  ul.stations .name { font-size:15px; }
+  ul.stations .tag { font-size:12px; color:var(--muted); }
+  ul.stations .del { border:none; padding:2px 8px; font-size:16px; color:var(--muted); }
+  ul.stations .del:hover { color:#e07a5f; background:none; }
+  .empty { color:var(--muted); font-size:14px; padding:12px; text-align:center; }
+  form.add { display:grid; gap:8px; margin-top:8px; }
+  form.add input { font-family:inherit; background:#140f0c; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px 10px; font-size:14px; }
+  form.add input:focus { outline:none; border-color:var(--accent); }
+  form.add button { justify-self:start; }
+  .hint { font-size:12px; color:var(--muted); line-height:1.5; margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Classical Chennai</h1>
+  <p class="sub">Traditional South Indian music and film music, instrumental only.</p>
+
+  <div class="card">
+    <div class="now">
+      <div class="label" id="live">Off air</div>
+      <div class="title" id="title">Choose a station</div>
+      <div class="meta" id="meta">&nbsp;</div>
+    </div>
+
+    <div class="controls">
+      <button id="prev" title="Previous station">&#9664;&#9664;</button>
+      <button id="play" class="play" title="Play / pause" aria-label="Play or pause">&#9654;</button>
+      <button id="next" title="Next station">&#9654;&#9654;</button>
+    </div>
+
+    <div class="vol">
+      <span>Volume</span>
+      <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Volume">
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <h2>Stations</h2>
+    <ul class="stations" id="list"></ul>
+
+    <h2>Add a stream</h2>
+    <form class="add" id="addForm">
+      <input id="addName" placeholder="Station name, e.g. Carnatic Instrumental" required>
+      <input id="addUrl" type="url" placeholder="Direct stream URL (https://...)" required>
+      <button type="submit">Add station</button>
+    </form>
+    <p class="hint">Use a direct audio stream URL (MP3, AAC or Icecast/Shoutcast) that you have the rights to play. Stations you add are saved in this browser only.</p>
+  </div>
+</div>
+
+<audio id="audio" preload="none"></audio>
+
+<script>
+  // Built-in stations. Replace the url values with direct stream URLs you have rights to use.
+  const DEFAULT_STATIONS = [
+    // { name: "Carnatic Instrumental", tag: "Veena, violin, flute", url: "https://example.com/stream.mp3" },
+  ];
+
+  const KEY = "classical-chennai-stations";
+  let stations = [];
+  try { stations = JSON.parse(localStorage.getItem(KEY) || "null") || DEFAULT_STATIONS.slice(); }
+  catch (e) { stations = DEFAULT_STATIONS.slice(); }
+
+  const audio = document.getElementById("audio");
+  const playBtn = document.getElementById("play");
+  const list = document.getElementById("list");
+  const titleEl = document.getElementById("title");
+  const metaEl = document.getElementById("meta");
+  const liveEl = document.getElementById("live");
+  const statusEl = document.getElementById("status");
+  let current = -1;
+
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(stations)); } catch (e) {} }
+
+  function setStatus(msg, isErr) {
+    statusEl.textContent = msg || "";
+    statusEl.className = "status" + (isErr ? " err" : "");
+  }
+
+  function render() {
+    list.innerHTML = "";
+    if (!stations.length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "No stations yet. Add a stream below.";
+      list.appendChild(li);
+    }
+    stations.forEach((s, i) => {
+      const li = document.createElement("li");
+      if (i === current) li.className = "active";
+      const info = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "name"; name.textContent = s.name;
+      info.appendChild(name);
+      if (s.tag) { const t = document.createElement("div"); t.className = "tag"; t.textContent = s.tag; info.appendChild(t); }
+      li.appendChild(info);
+      const del = document.createElement("button");
+      del.className = "del"; del.textContent = "×"; del.title = "Remove station"; del.setAttribute("aria-label", "Remove " + s.name);
+      del.onclick = (e) => { e.stopPropagation(); removeStation(i); };
+      li.appendChild(del);
+      li.onclick = () => select(i, true);
+      list.appendChild(li);
+    });
+    document.getElementById("prev").disabled = stations.length < 2;
+    document.getElementById("next").disabled = stations.length < 2;
+  }
+
+  function select(i, autoplay) {
+    current = i;
+    const s = stations[i];
+    audio.src = s.url;
+    titleEl.textContent = s.name;
+    metaEl.textContent = s.tag || "";
+    render();
+    if (autoplay) play();
+  }
+
+  function play() {
+    if (current < 0) { if (stations.length) select(0, false); else { setStatus("Add a station first.", true); return; } }
+    const p = audio.play();
+    if (p && p.catch) p.catch(() => setStatus("Playback was blocked or the stream is unavailable.", true));
+  }
+
+  function toggle() {
+    if (!audio.paused) { audio.pause(); return; }
+    play();
+  }
+
+  function step(d) {
+    if (stations.length < 2) return;
+    const base = current < 0 ? (d > 0 ? -1 : 0) : current;
+    select((base + d + stations.length) % stations.length, true);
+  }
+
+  function removeStation(i) {
+    const wasCurrent = i === current;
+    stations.splice(i, 1);
+    save();
+    if (wasCurrent) { audio.pause(); audio.removeAttribute("src"); audio.load(); current = -1; titleEl.textContent = "Choose a station"; metaEl.textContent = ""; liveEl.textContent = "Off air"; }
+    else if (current > i) current--;
+    render();
+  }
+
+  audio.addEventListener("play", () => { playBtn.innerHTML = "&#10074;&#10074;"; liveEl.textContent = "On air"; setStatus(""); });
+  audio.addEventListener("pause", () => { playBtn.innerHTML = "&#9654;"; liveEl.textContent = "Paused"; });
+  audio.addEventListener("error", () => { if (current >= 0) setStatus("Could not load this stream. Check the URL.", true); });
+  audio.addEventListener("waiting", () => setStatus("Buffering..."));
+  audio.addEventListener("playing", () => setStatus(""));
+
+  playBtn.onclick = toggle;
+  document.getElementById("prev").onclick = () => step(-1);
+  document.getElementById("next").onclick = () => step(1);
+
+  const vol = document.getElementById("volume");
+  audio.volume = parseFloat(vol.value);
+  vol.addEventListener("input", () => { audio.volume = parseFloat(vol.value); });
+
+  document.getElementById("addForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = document.getElementById("addName").value.trim();
+    const url = document.getElementById("addUrl").value.trim();
+    if (!/^https?:\/\//i.test(url)) { setStatus("Enter a URL that starts with http:// or https://", true); return; }
+    stations.push({ name: name, tag: "Added by you", url: url });
+    save();
+    e.target.reset();
+    setStatus("Station added.");
+    render();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT") return;
+    if (e.code === "Space") { e.preventDefault(); toggle(); }
+    else if (e.key === "ArrowRight") step(1);
+    else if (e.key === "ArrowLeft") step(-1);
+  });
+
+  render();
+</script>
+</body>
+</html>
