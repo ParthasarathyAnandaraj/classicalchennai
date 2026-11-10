@@ -84,15 +84,20 @@
 <audio id="audio" preload="none"></audio>
 
 <script>
-  // Built-in stations. Replace the url values with direct stream URLs you have rights to use.
-  const DEFAULT_STATIONS = [
-    // { name: "Carnatic Instrumental", tag: "Veena, violin, flute", url: "https://example.com/stream.mp3" },
-  ];
-
+  // Stations come from tracks.json (tracks with an audio_url) plus any the listener adds in this browser.
   const KEY = "classical-chennai-stations";
   let stations = [];
-  try { stations = JSON.parse(localStorage.getItem(KEY) || "null") || DEFAULT_STATIONS.slice(); }
-  catch (e) { stations = DEFAULT_STATIONS.slice(); }
+  try { stations = (JSON.parse(localStorage.getItem(KEY) || "null") || []).map(s => Object.assign({ user: true }, s)); }
+  catch (e) { stations = []; }
+  fetch("tracks.json").then(r => r.ok ? r.json() : { tracks: [] }).then(d => {
+    const catalog = (d.tracks || []).filter(t => t.audio_url).map(t => ({
+      name: t.title,
+      tag: [t.composer, t.theme].filter(Boolean).join(" · "),
+      url: t.audio_url
+    }));
+    stations = catalog.concat(stations);
+    render();
+  }).catch(() => {});
 
   const audio = document.getElementById("audio");
   const playBtn = document.getElementById("play");
@@ -103,7 +108,7 @@
   const statusEl = document.getElementById("status");
   let current = -1;
 
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(stations)); } catch (e) {} }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(stations.filter(s => s.user))); } catch (e) {} }
 
   function setStatus(msg, isErr) {
     statusEl.textContent = msg || "";
@@ -193,7 +198,7 @@
     const name = document.getElementById("addName").value.trim();
     const url = document.getElementById("addUrl").value.trim();
     if (!/^https?:\/\//i.test(url)) { setStatus("Enter a URL that starts with http:// or https://", true); return; }
-    stations.push({ name: name, tag: "Added by you", url: url });
+    stations.push({ name: name, tag: "Added by you", url: url, user: true });
     save();
     e.target.reset();
     setStatus("Station added.");
